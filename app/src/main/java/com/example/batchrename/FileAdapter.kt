@@ -8,14 +8,12 @@ import android.widget.BaseAdapter
 import android.widget.CheckBox
 import android.widget.TextView
 
-/**
- * Represents one file entry: its DocumentFile name, whether it's selected,
- * and the previewed new name (if any).
- */
 data class FileEntry(
-    val name: String,
+    val displayPath: String,
+    val fileName: String,
     var selected: Boolean = true,
-    var newName: String? = null
+    var newBaseName: String? = null,
+    var newDisplayPath: String? = null
 )
 
 class FileAdapter(
@@ -36,14 +34,13 @@ class FileAdapter(
         val tvOldName = view.findViewById<TextView>(R.id.tvOldName)
         val tvNewName = view.findViewById<TextView>(R.id.tvNewName)
 
-        // Avoid recycled-listener firing on wrong item
         checkBox.setOnCheckedChangeListener(null)
         checkBox.isChecked = entry.selected
-        tvOldName.text = entry.name
+        tvOldName.text = entry.displayPath
 
-        if (!entry.newName.isNullOrEmpty() && entry.newName != entry.name) {
+        if (!entry.newDisplayPath.isNullOrEmpty() && entry.newDisplayPath != entry.displayPath) {
             tvNewName.visibility = View.VISIBLE
-            tvNewName.text = "\u2192 ${entry.newName}"
+            tvNewName.text = "\u2192 ${entry.newDisplayPath}"
         } else {
             tvNewName.visibility = View.GONE
         }
@@ -56,7 +53,10 @@ class FileAdapter(
     }
 
     fun clearPreviews() {
-        items.forEach { it.newName = null }
+        items.forEach {
+            it.newBaseName = null
+            it.newDisplayPath = null
+        }
         notifyDataSetChanged()
     }
 }

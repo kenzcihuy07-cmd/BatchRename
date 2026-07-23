@@ -47,6 +47,15 @@
         android:textSize="12sp"
         android:textColor="#616161" />
 
+    <CheckBox
+        android:id="@+id/cbIncludeSubfolders"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginBottom="4dp"
+        android:text="Termasuk subfolder (folder di dalamnya)"
+        android:textSize="13sp" />
+
     <ListView
         android:id="@+id/listViewFiles"
         android:layout_width="match_parent"
