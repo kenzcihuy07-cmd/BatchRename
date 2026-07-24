@@ -19,13 +19,15 @@ class MainActivity : AppCompatActivity() {
     private var folderUri: Uri? = null
     private var folderDoc: DocumentFile? = null
 
-    private val pathToDoc = HashMap<String, DocumentFile>()
+    // Keep a map from displayed name -> DocumentFile, refreshed each time we list the folder
+    private val nameToDoc = HashMap<String, DocumentFile>()
 
     private val pickFolderLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             val uri = result.data?.data ?: return@registerForActivityResult
+            // Persist permission so we can write later
             contentResolver.takePersistableUriPermission(
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -56,10 +58,6 @@ class MainActivity : AppCompatActivity() {
             adapter.notifyDataSetChanged()
         }
 
-        binding.cbIncludeSubfolders.setOnCheckedChangeListener { _, _ ->
-            if (folderDoc != null) loadFiles()
-        }
-
         binding.radioGroupMode.setOnCheckedChangeListener { _: RadioGroup, _ ->
             updateModeVisibility()
             adapter.clearPreviews()
@@ -79,47 +77,25 @@ class MainActivity : AppCompatActivity() {
             if (binding.radioNumbering.isChecked) View.VISIBLE else View.GONE
     }
 
-    private fun collectFilesRecursively(
-        folder: DocumentFile,
-        relPath: String,
-        entries: MutableList<FileEntry>
-    ) {
-        folder.listFiles().forEach { child ->
-            val name = child.name ?: return@forEach
-            val currentPath = if (relPath.isEmpty()) name else "$relPath/$name"
-            if (child.isDirectory) {
-                collectFilesRecursively(child, currentPath, entries)
-            } else if (child.isFile) {
-                entries.add(FileEntry(displayPath = currentPath, fileName = name))
-                pathToDoc[currentPath] = child
-            }
-        }
-    }
-
     private fun loadFiles() {
         val doc = folderDoc ?: return
         val entries = mutableListOf<FileEntry>()
-        pathToDoc.clear()
+        nameToDoc.clear()
 
-        if (binding.cbIncludeSubfolders.isChecked) {
-            collectFilesRecursively(doc, "", entries)
-        } else {
-            doc.listFiles().forEach { file ->
-                val name = file.name ?: return@forEach
-                if (file.isFile) {
-                    entries.add(FileEntry(displayPath = name, fileName = name))
-                    pathToDoc[name] = file
-                }
+        doc.listFiles().forEach { file ->
+            val name = file.name ?: return@forEach
+            if (file.isFile) {
+                entries.add(FileEntry(name = name, selected = true))
+                nameToDoc[name] = file
             }
         }
-
-        entries.sortBy { it.displayPath.lowercase() }
+        entries.sortBy { it.name.lowercase() }
         adapter.items.clear()
         adapter.items.addAll(entries)
         adapter.notifyDataSetChanged()
 
         if (entries.isEmpty()) {
-            Toast.makeText(this, "Tidak ada file ditemukan", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Tidak ada file di folder ini", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -132,7 +108,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun computeNewBaseName(oldName: String, indexAmongSelected: Int): String {
+    /** Computes the new name for a given entry based on the currently selected mode. */
+    private fun computeNewName(oldName: String, indexAmongSelected: Int): String {
         return when {
             binding.radioFindReplace.isChecked -> {
                 val find = binding.etFind.text?.toString().orEmpty()
@@ -168,14 +145,10 @@ class MainActivity : AppCompatActivity() {
         var idx = 0
         adapter.items.forEach { entry ->
             if (entry.selected) {
-                val newBase = computeNewBaseName(entry.fileName, idx)
-                entry.newBaseName = newBase
-                val parent = entry.displayPath.substringBeforeLast("/", "")
-                entry.newDisplayPath = if (parent.isNotEmpty()) "$parent/$newBase" else newBase
+                entry.newName = computeNewName(entry.name, idx)
                 idx++
             } else {
-                entry.newBaseName = null
-                entry.newDisplayPath = null
+                entry.newName = null
             }
         }
         adapter.notifyDataSetChanged()
@@ -183,7 +156,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun performRename() {
-        if (folderDoc == null) {
+        val doc = folderDoc
+        if (doc == null) {
             Toast.makeText(this, "Pilih folder dulu", Toast.LENGTH_SHORT).show()
             return
         }
@@ -193,13 +167,11 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Ensure previews are computed
         var idx = 0
         selected.forEach { entry ->
-            if (entry.newBaseName.isNullOrEmpty()) {
-                val newBase = computeNewBaseName(entry.fileName, idx)
-                entry.newBaseName = newBase
-                val parent = entry.displayPath.substringBeforeLast("/", "")
-                entry.newDisplayPath = if (parent.isNotEmpty()) "$parent/$newBase" else newBase
+            if (entry.newName.isNullOrEmpty()) {
+                entry.newName = computeNewName(entry.name, idx)
             }
             idx++
         }
@@ -208,12 +180,12 @@ class MainActivity : AppCompatActivity() {
         var failCount = 0
 
         selected.forEach { entry ->
-            val targetBase = entry.newBaseName ?: entry.fileName
-            if (targetBase != entry.fileName) {
-                val file = pathToDoc[entry.displayPath]
+            val target = entry.newName ?: entry.name
+            if (target != entry.name) {
+                val file = nameToDoc[entry.name]
                 if (file != null) {
                     try {
-                        val ok = file.renameTo(targetBase)
+                        val ok = file.renameTo(target)
                         if (ok) successCount++ else failCount++
                     } catch (e: Exception) {
                         failCount++
@@ -230,6 +202,7 @@ class MainActivity : AppCompatActivity() {
             Toast.LENGTH_LONG
         ).show()
 
+        // Refresh list to reflect new names on disk
         loadFiles()
     }
 }
